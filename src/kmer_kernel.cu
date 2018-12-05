@@ -18,7 +18,7 @@ __global__ void SetMatrix(int *Mat, ushort offset, int val, int nF)
 }
 
 //Compute k-mer index
-__global__ void ComputeIndex(short *Seq, int *Index, const int k, lint nN, ushort offset)
+__global__ void ComputeIndex(char *Seq, int *Index, const int k, lint nN, ushort offset)
 {
    lint idx = threadIdx.x + (blockDim.x * blockIdx.x);
 
@@ -32,9 +32,10 @@ __global__ void ComputeIndex(short *Seq, int *Index, const int k, lint nN, ushor
       {
          for( lint i = 0; i < k; i++ )
          {
-            if (Seq[i + id] != -1) //Verifica se ha alguem que nao deve ser processado
+            char nuc = Seq[i + id];
+            if (nuc != -1) //Verifica se ha alguem que nao deve ser processado
             {
-               index += Seq[i + id] * POW( (k - 1) - i );
+               index += nuc * powf(4, ((k-1)-i));
             }
             else
             {
@@ -48,7 +49,7 @@ __global__ void ComputeIndex(short *Seq, int *Index, const int k, lint nN, ushor
 }
 
 //Compute k-mer frequency
-__global__ void ComputeFreq(int *Index, int *Freq, int *start, int *length, ushort offset, int fourk, lint nS, lint nN)
+__global__ void ComputeFreq(int *Index, int *Freq, lint *start, int *length, ushort offset, int fourk, lint nS, lint nN)
 {
 
    int idx = threadIdx.x + (blockDim.x * blockIdx.x);
@@ -69,7 +70,7 @@ __global__ void ComputeFreq(int *Index, int *Freq, int *start, int *length, usho
 }
 
 //New way to compute k-mer frequency
-__global__ void ComputeFreqNew(int *Index, int *Freq, int *start, int *length, ushort offset, int fourk, lint nS)
+__global__ void ComputeFreqNew(int *Index, int *Freq, lint *start, int *length, ushort offset, int fourk, lint nS)
 {
 
    int blx = blockIdx.x;
@@ -81,9 +82,8 @@ __global__ void ComputeFreqNew(int *Index, int *Freq, int *start, int *length, u
    {
       int idx = start[i] + threadIdx.x;
       int id_freq = (fourk * i) + Index[idx];
-      if (threadIdx.x < length[i])
+      if (threadIdx.x < length[i]-1)
       {
-         //Freq[idx] = 1;
          atomicAdd(&Freq[id_freq], 1);
       }
    }
