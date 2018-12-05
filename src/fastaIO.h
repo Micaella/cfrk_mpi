@@ -10,28 +10,28 @@
 #include "kseq.h"
 #include "tipos.h"
 
-KSEQ_INIT(gzFile, gzread)
 
 //-------------------------------------------------------------------------------------------
-void ProcessTmpData(struct tmp_data *tdfirst, struct read *rd, lint nN, lint nS, ushort flag)
+void ProcessTmpData(struct tmp_data *tdfirst, struct read *rd, lint nN, lint nS, ushort flag, int rank)
 {
-   struct tmp_data *aux = tdfirst;
-   int i, pos = 0, seq = 0;
 
+      printf("rank: %d entrei7 \n\n", rank);
+   struct tmp_data *aux = tdfirst;
+   lint i, pos = 0, seq = 0;
    if (flag == 0) //CPU
    {
-      rd->data = (short*)malloc(sizeof(short)*(nN + nS));
+      rd->data = (char*)malloc(sizeof(char)*(nN + nS));
       rd->length = (int*)malloc(sizeof(int)*nS);
-      rd->start = (int*)malloc(sizeof(int)*nS);
+      rd->start = (lint*)malloc(sizeof(lint)*nS);
    }
    if (flag == 1) //GPU
    {
-      cudaMallocHost((void**)&rd->data, sizeof(short)*(nN + nS) );
+      cudaMallocHost((void**)&rd->data, sizeof(char)*(nN + nS));
       cudaMallocHost((void**)&rd->length, sizeof(int)*nS);
-      cudaMallocHost((void**)&rd->start, sizeof(int)*nS);
+      cudaMallocHost((void**)&rd->start, sizeof(lint)*nS);
    }
-
    rd->start[0] = 0;
+
    while (aux != NULL && seq < nS)
    {
       for(i = 0; i < aux->length; i++)
@@ -46,51 +46,63 @@ void ProcessTmpData(struct tmp_data *tdfirst, struct read *rd, lint nN, lint nS,
       rd->start[seq] = pos;
       aux = aux->next;
    }
-
 }
 
 //-------------------------------------------------------------------------
-void ReadFASTASequences(char *file, lint *nN, lint *nS, struct read *rd, ushort flag)
+void ReadFASTASequences(char *buf, lint *nN, lint *nS, struct read *rd, ushort flag, int tamBuf, int rank)
 {
-   gzFile fp;
-   kseq_t *seq;
+   printf(" rank: %d entrei \n\n", rank);
+   //gzFile fp;
+   //kseq_t *seq;
    struct tmp_data *tdfirst = NULL, *td = NULL, *aux = NULL;
    int len;
    lint lnN = 0, lnS = 0;
-   int i;
-   char letter;
+   int i=1;
    struct timespec start, stop;
    double seconds;
 
-   fp = gzopen(file, "r");
-   seq = kseq_init(fp);
+   //fp = gzopen(file, "r");
+   //fp = file;
+   //seq = kseq_init(file);
    tdfirst = (struct tmp_data*)malloc(sizeof(struct tmp_data));
    td = tdfirst;
    td->next = NULL;
-   while ((len = kseq_read(seq)) >= 0)
+
+   while (tamBuf > 0)
    {
       clock_gettime(CLOCK_REALTIME, &start);
-      lnN += len; //Count the total number of nucleotides read
-      lnS++;//count the total number of seqs read
-      td->data = (short*)malloc(sizeof(short) * len);
-      td->length = len;
-      for (i = 0; i < len; i++)
-      {   
-         letter = toupper(seq->seq.s[i]);
-         switch( toupper(letter) )
-         {   
+      //lnN = i; //Count the total number of nucleotides read
+      lnS++; //count the total number of seqs read
+      td->data = (char*)malloc(sizeof(char) * tamBuf);
+      //td->length = len;
+
+      while (buf[i] != '>')
+      {
+         //char letter = toupper(seq->seq.s[i]);
+         i++;
+         switch(buf[i])
+         {
+            case 'a':
             case 'A':
-               td->data[i] = 0; break;
+               td->data[i] = 0; break;//antes do breal contabilizar o nucleotideo
+            case 'c':
             case 'C':
                td->data[i] = 1; break;
+            case 'g':
             case 'G':
                td->data[i] = 2; break;
+            case 't':
             case 'T':
                td->data[i] = 3; break;
             default:
                td->data[i] = -1; break;
          }
       }
+      td->data[i] = -1; // para o início da sequência ficar -1, e retornar ao whil
+      td->length = i-1;
+      lnN = i;
+      printf("rank: %d i: %d\n\n", rank, i);
+      tamBuf = tamBuf - (i-1);
       aux = (struct tmp_data*)malloc(sizeof(struct tmp_data));
       td->next = aux;
       aux->next=NULL;
@@ -104,7 +116,7 @@ void ReadFASTASequences(char *file, lint *nN, lint *nS, struct read *rd, ushort 
       }
    }
 
-   ProcessTmpData(tdfirst, rd, lnN, lnS, flag);
+   ProcessTmpData(tdfirst, rd, lnN, lnS, flag, rank);
 
    if (DBG == 1)
      for (i = 0;i < lnS; i++)
@@ -114,10 +126,9 @@ void ReadFASTASequences(char *file, lint *nN, lint *nS, struct read *rd, ushort 
 
    *nN = lnN + lnS;
    *nS = lnS;
-   
-   gzclose(fp);
 
-   //return rd;
+   //gzclose(fp);
+    printf("rank: %d saí\n\n", rank);
 }
 
 #endif
