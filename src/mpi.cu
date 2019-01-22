@@ -73,10 +73,16 @@ int main (int argc, char *argv[])
    bufsizeDouble = ((double)filesize / nprocs);
    bufsizeInt = ceil(bufsizeDouble);
    buf = (char *)malloc(bufsizeInt * sizeof(char));
-
-   //printf("bufsize: %d \n", bufsizeInt);
+   
+   //para melhor alocar as tarefas nos processos (tratando o resto da divisão do arquivo)
+   //printf("rank:%d bufsize: %d \n", rank, bufsizeInt);
    //printf("filesize: %d \n", filesize);
-
+   if(rank == nprocs-1 && bufsizeInt*nprocs != filesize)
+   {
+      bufsizeInt = (bufsizeInt - ((bufsizeInt*nprocs) - filesize));
+      printf("rank: %d bufsize: %d \n", rank, bufsizeInt);
+   }
+   
    MPI_Barrier(MPI_COMM_WORLD);
 
    MPI_File_set_view(fh, rank*bufsizeInt, MPI_CHAR, filetype, "native", MPI_INFO_NULL);
@@ -124,10 +130,12 @@ int main (int argc, char *argv[])
    if(rank == 0)
    {
       MPI_File_read_at_all(fh, rank*bufsize_new, buf, bufsize_new-1, MPI_CHAR, &status);
+      //printf("rank: %d, read primeiro: %c read ultimo: %d  read penultimo: %d \n", rank, buf[0], buf[bufsize_new-1],  buf[bufsize_new-2]);
    }
    else
    {
       MPI_File_read_at_all(fh, inic_view_atual+1, buf, bufsize_new, MPI_CHAR, &status);
+      //printf("rank: %d, read primeiro: %c read ultimo: %d read penultimo: %d \n", rank, buf[0], buf[bufsize_new], buf[bufsize_new-1]);
    }
 
    /*if(rank == 0)
