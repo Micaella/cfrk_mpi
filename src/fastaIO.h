@@ -7,128 +7,148 @@
 #include <zlib.h>
 #include <time.h>
 #include <cuda.h>
-#include "kseq.h"
 #include "tipos.h"
+#include<bits/stdc++.h>
 
-
-//-------------------------------------------------------------------------------------------
-void ProcessTmpData(struct tmp_data *tdfirst, struct read *rd, lint nN, lint nS, ushort flag, int rank)
+/*int GetNs(char *FileName)
 {
+   char temp[64], cmd[512];
+   FILE *in;
+   strcpy(cmd, "grep -c \">\" ");
+   strcat(cmd, FileName);
+   in = popen(cmd, "r");
+   fgets(temp, 64, in);
+   fclose(in);
+   return atoi(temp);
+}*/
 
-      printf("rank: %d entrei7 \n\n", rank);
-   struct tmp_data *aux = tdfirst;
-   lint i, pos = 0, seq = 0;
-   if (flag == 0) //CPU
+struct seq *ReadFasta(char *buffer, lint *nS, int rank, lint nSeq)
+{
+   char *line = NULL, *aux;
+   size_t len = 0;
+   ssize_t read, oldRead;
+   struct seq *seq, *init, *next;
+   int count = -1, flag = 0;
+   int i=0;
+
+   init = (struct seq*)malloc(sizeof(struct seq));
+   init->next = NULL;
+   
+   line = strtok(buffer, "\n");
+   while (line != NULL)
    {
-      rd->data = (char*)malloc(sizeof(char)*(nN + nS));
-      rd->length = (int*)malloc(sizeof(int)*nS);
-      rd->start = (lint*)malloc(sizeof(lint)*nS);
+       read = strlen(line);
+       if (line[0] == '>')
+       {
+          next = init;
+          seq = (struct seq*)malloc(sizeof(struct seq));
+          seq->header = (char*)malloc(sizeof(char)*read);
+          strcpy(seq->header, line);
+          flag = 0;
+       }
+       else
+       {
+          if (flag == 0)
+          {
+             seq->seq = (char*)malloc(sizeof(char)*read);
+             strcat(seq->seq, line);
+             flag = 1;
+          }
+          else
+          {
+             oldRead = strlen(seq->seq);
+             aux = (char*)malloc(sizeof(char)*oldRead);
+             strcpy(aux, seq->seq);
+             seq->seq = NULL;
+             seq->seq = (char*)malloc(sizeof(char)*(read+oldRead));
+             strcat(seq->seq, aux);
+             strcat(seq->seq, line);
+             aux = NULL;
+
+             seq->next = NULL;
+             next->next = seq;
+  }
+       }
+       line = strtok(NULL,"\n");
    }
-   if (flag == 1) //GPU
-   {
-      cudaMallocHost((void**)&rd->data, sizeof(char)*(nN + nS));
-      cudaMallocHost((void**)&rd->length, sizeof(int)*nS);
-      cudaMallocHost((void**)&rd->start, sizeof(lint)*nS);
-   }
+   return seq;
+}
+
+void ProcessTmpData(struct seq *seq, struct read *rd, lint nN, lint nS, ushort flag, int rank)
+{
+   lint i, j, pos = 0, seqCount = 0;
+   struct seq *aux;
+   aux = seq->next;
+
+   cudaMallocHost((void**)&rd->data, sizeof(char)*(nN + nS));
+   cudaMallocHost((void**)&rd->length, sizeof(int)*nS);
+   cudaMallocHost((void**)&rd->start, sizeof(lint)*nS);
+      
    rd->start[0] = 0;
-
-   while (aux != NULL && seq < nS)
+   printf("%s\n", aux->len);
+   while (aux != NULL)
    {
-      for(i = 0; i < aux->length; i++)
+      for(i = 0; i < aux->len; i++)
       {
          rd->data[pos] = aux->data[i];
          pos++;
       }
       rd->data[pos] = -1;
       pos++;
-      rd->length[seq] = aux->length;
-      seq++;
-      rd->start[seq] = pos;
+      rd->length[seqCount] = aux->len;
+      seqCount++;
+      rd->start[seqCount] = pos;
       aux = aux->next;
    }
 }
 
 //-------------------------------------------------------------------------
-void ReadFASTASequences(char *buf, lint *nN, lint *nS, struct read *rd, ushort flag, int tamBuf, int rank)
+struct seq *ReadFASTASequences(char *file, lint *nN, lint *nS, struct read *rd, ushort flag, int rank, lint nSeq)
 {
    printf(" rank: %d entrei \n\n", rank);
-   //gzFile fp;
-   //kseq_t *seq;
-   struct tmp_data *tdfirst = NULL, *td = NULL, *aux = NULL;
+   struct seq *seq, *prc;
    int len;
-   lint lnN = 0, lnS = 0;
-   int i=1;
-   struct timespec start, stop;
-   double seconds;
-
-   //fp = gzopen(file, "r");
-   //fp = file;
-   //seq = kseq_init(file);
-   tdfirst = (struct tmp_data*)malloc(sizeof(struct tmp_data));
-   td = tdfirst;
-   td->next = NULL;
-
-   while (tamBuf > 0)
+   lint lnN = 0;
+   int i, j;
+  
+   seq = ReadFasta(file, nS, rank, nSeq);
+   
+   //for (i = 0; i < *nS; i++)
+   prc = seq->next;
+   while(prc != NULL)
    {
-      clock_gettime(CLOCK_REALTIME, &start);
-      //lnN = i; //Count the total number of nucleotides read
-      lnS++; //count the total number of seqs read
-      td->data = (char*)malloc(sizeof(char) * tamBuf);
-      //td->length = len;
-
-      while (buf[i] != '>')
+      len = strlen(seq->seq);
+      seq->len = len;
+      lnN += len;
+      seq->data = (char*)malloc(sizeof(char) * len);
+      
+      for (j = 0; j < len; j++)
       {
-         //char letter = toupper(seq->seq.s[i]);
-         i++;
-         switch(buf[i])
+         switch(seq->seq[j])
          {
             case 'a':
             case 'A':
-               td->data[i] = 0; break;//antes do breal contabilizar o nucleotideo
+               seq->data[j] = 0; break;
             case 'c':
             case 'C':
-               td->data[i] = 1; break;
+               seq->data[j] = 1; break;
             case 'g':
             case 'G':
-               td->data[i] = 2; break;
+               seq->data[j] = 2; break;
             case 't':
             case 'T':
-               td->data[i] = 3; break;
+               seq->data[j] = 3; break;
             default:
-               td->data[i] = -1; break;
+               seq->data[j] = -1; break;
          }
       }
-      td->data[i] = -1; // para o início da sequência ficar -1, e retornar ao whil
-      td->length = i-1;
-      lnN = i;
-      printf("rank: %d i: %d\n\n", rank, i);
-      tamBuf = tamBuf - (i-1);
-      aux = (struct tmp_data*)malloc(sizeof(struct tmp_data));
-      td->next = aux;
-      aux->next=NULL;
-      td = aux;
-      if (DBG == 1)
-      {
-         printf("[util]Seq %ld read!-> ", lnS);
-         clock_gettime(CLOCK_REALTIME, &stop);
-         seconds = (double)((stop.tv_sec+stop.tv_nsec*1e-9) - (double)(start.tv_sec+start.tv_nsec*1e-9));
-         printf("wall time %fs\n", seconds);
-      }
-   }
-
-   ProcessTmpData(tdfirst, rd, lnN, lnS, flag, rank);
-
-   if (DBG == 1)
-     for (i = 0;i < lnS; i++)
-     {
-       printf("[util] %d\n", rd->length[i]);
-     }
-
-   *nN = lnN + lnS;
-   *nS = lnS;
-
-   //gzclose(fp);
-    printf("rank: %d saí\n\n", rank);
+      prc = prc->next;
+    }
+    
+    ProcessTmpData(seq, rd, lnN, *nS, flag, rank);
+    *nN = lnN + *nS;
+    
+    return seq;
 }
 
 #endif
